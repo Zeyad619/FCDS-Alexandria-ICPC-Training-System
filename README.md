@@ -1,6 +1,6 @@
 # FCDS ICPC Training Management System
 
-A Go-based foundation for automating trainer–trainee assignment and activity tracking for a competitive programming (CP) community's training program.
+A Go-based tool for automating trainer–trainee assignment and activity tracking for a competitive programming (CP) community's training program.
 
 ## Problem
 
