@@ -1,0 +1,11 @@
+# Google service-account credentials
+credentials/
+*.json
+
+# Local environment
+.env
+
+# Go build/test artifacts
+/bin/
+*.test
+coverage.out

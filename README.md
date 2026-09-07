@@ -1,75 +1,59 @@
-# FCDS Training Assignment Tool
+# FCDS ICPC Training Management System
 
-A tool for automating trainer–trainee assignment and activity
-tracking for a competitive programming (CP) community's training
-program.
+A Go-based foundation for automating trainer–trainee assignment and activity tracking for a competitive programming (CP) community's training program.
 
-## The problem
+## Problem
 
-The community runs CP training sessions where each trainee is paired
-with a trainer who follows up with them individually. Assigning
-trainees to trainers was previously done by hand in a spreadsheet,
-under two rules:
+The community runs CP training sessions where each trainee is followed by a trainer. The previous workflow relied on manual spreadsheet edits, repeated assignment work, and manual checks of trainee activity.
 
-- every trainer should end up with roughly the same number of trainees
-- trainers who only want female trainees should only receive female trainees
+The system is being built around four pieces:
 
-On top of that, the community runs a waiting list (there are usually
-more applicants than open spots). When an active trainee stops
-participating they should be dropped to free a spot for someone from
-the waiting list — but doing this by hand means constant manual
-spreadsheet edits and repeated messages every time someone is added or
-removed, and there was no reliable way to track who was actually
-solving problems and who wasn't.
+- balanced trainer–trainee assignment with matching constraints
+- Google Sheets as the operational data source/output
+- Codeforces activity data for trainee monitoring
+- Telegram notifications for assignment and status changes
 
-## Status: work in progress
+## Current status
 
-**Implemented**
-- Core assignment engine ([`internal/assignment`](internal/assignment)) — computes a
-  trainer/trainee assignment that balances load as evenly as possible
-  while respecting the gender constraint. Modeled as a max-flow
-  problem (see below). Covered by unit tests, including an infeasible
-  case where trainees are correctly reported as unassigned instead of
-  being force-matched incorrectly.
-- CLI demo ([`cmd/assign`](cmd/assign)) that runs the engine against a small
-  hardcoded sample so the logic can be exercised end-to-end.
+### Implemented
 
-**Planned next**
-- Google Sheets integration — read trainer/trainee lists from a live
-  sheet and write the resulting assignment back to it, so the sheet
-  everyone already looks at stays current automatically.
-- Codeforces integration — track submissions to flag inactive
-  trainees for a warning/filter step, and identify strong waiting-list
-  candidates to promote.
-- A notification step for trainer/trainee changes.
+- **Assignment engine** (`internal/assignment`) — balances trainer load as evenly as possible while enforcing the gender constraint. The problem is modeled as a **max-flow** network and includes unit tests, including infeasible cases.
+- **Codeforces client** (`internal/codeforces`) — fetches public user submissions through the Codeforces API and summarizes recent activity, accepted submissions, unique solved problems, and latest submission time.
+- **Google Sheets adapter** (`internal/sheets`) — reads and writes rectangular ranges through the Google Sheets API and converts assignment results into sheet-ready rows.
+- **Telegram client** (`internal/telegram`) — sends plain-text notifications through the Telegram Bot API with request/error handling and tests using an HTTP test server.
+- Example configuration is provided in `config.example.env`; credentials are intentionally excluded from source control.
 
-## How the assignment engine works
+### Next
 
-The assignment is modeled as a max-flow problem:
+- Connect live Sheets rows to the assignment engine.
+- Add persistent trainee/trainer state and assignment history.
+- Define warning/filter rules from Codeforces activity.
+- Implement waiting-list scoring and promotion.
+- Trigger Telegram notifications automatically when assignments or trainee status change.
 
-```
-source -> trainee (capacity 1) -> eligible trainer (capacity 1) -> sink (capacity = trainer's quota)
+## Assignment model
+
+```text
+source -> trainee (capacity 1)
+       -> eligible trainer (capacity 1)
+       -> sink (capacity = trainer quota)
 ```
 
-Each trainer's quota is computed so that quotas differ by at most one
-trainee across the whole group. An edge from a trainee to a trainer
-only exists if the pairing is allowed — a female trainer's incoming
-edges only come from female trainees, while male trainers can accept
-either. Running max-flow from source to sink and reading off which
-trainee→trainer edges carry flow gives a valid assignment; if the
-constraints make a full assignment impossible (for example, more male
-trainees than the male trainers' combined quota), the affected
-trainees come back in `Assignment.Unassigned` instead of being
-silently dropped or matched against the rules.
+Trainer quotas differ by at most one trainee. A female trainer only receives female trainees, while male trainers can receive either gender. If a complete assignment is impossible, the engine explicitly returns unassigned trainees rather than violating the constraints.
 
-## Running it
+## Configuration
+
+Copy `config.example.env` and provide local credentials. Never commit Google service-account credentials, Telegram bot tokens, or other secrets.
+
+## Running
 
 ```bash
 go run ./cmd/assign
-```
-
-## Running tests
-
-```bash
 go test ./...
 ```
+
+## Integrations
+
+- [Codeforces API](https://codeforces.com/apiHelp)
+- [Google Sheets API](https://developers.google.com/sheets/api)
+- [Telegram Bot API](https://core.telegram.org/bots/api)
