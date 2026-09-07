@@ -73,3 +73,9 @@ go run ./cmd/assign
 ```bash
 go test ./...
 ```
+## Integrations
+
+- [Codeforces API](https://codeforces.com/apiHelp)
+- [Google Sheets API](https://developers.google.com/sheets/api)
+- [Telegram Bot API](https://core.telegram.org/bots/api)
+
