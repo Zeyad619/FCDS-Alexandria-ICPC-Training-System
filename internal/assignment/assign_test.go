@@ -55,13 +55,48 @@ func TestAssign_FemaleTrainerOnlyGetsFemaleTrainees(t *testing.T) {
 	}
 }
 
-// When there are more male trainees than male-trainer capacity, some
-// male trainees must be left unassigned rather than incorrectly
-// routed to a female trainer.
-func TestAssign_ReportsUnassignedWhenInfeasible(t *testing.T) {
+// This is the case a naive single-pass two-pointer (sort everyone by
+// gender, then hand out `quota` trainees per trainer in order) gets
+// wrong: with only 1 female trainee against a female trainer whose
+// aspirational quota is 2, a naive walk would keep taking from the
+// trainee list and hand her a male trainee next. The two-phase
+// version must never do that.
+func TestAssign_NeverGivesFemaleTrainerAMaleTrainee(t *testing.T) {
 	trainers := []Trainer{
-		{ID: "female-trainer", Gender: Female}, // quota will be 2
-		{ID: "male-trainer", Gender: Male},     // quota will be 1
+		{ID: "female-trainer", Gender: Female},
+		{ID: "male-trainer-1", Gender: Male},
+		{ID: "male-trainer-2", Gender: Male},
+	}
+	trainees := []Trainee{
+		{ID: "f1", Gender: Female},
+		{ID: "m1", Gender: Male},
+		{ID: "m2", Gender: Male},
+		{ID: "m3", Gender: Male},
+	}
+	result := Assign(trainers, trainees)
+
+	if len(result.Unassigned) != 0 {
+		t.Fatalf("expected everyone assigned (male trainers can absorb the shortfall), got unassigned: %v", result.Unassigned)
+	}
+	if result.TraineeToTrainer["f1"] != "female-trainer" {
+		t.Errorf("expected f1 with female-trainer, got %s", result.TraineeToTrainer["f1"])
+	}
+	for _, id := range []string{"m1", "m2", "m3"} {
+		trainerID := result.TraineeToTrainer[id]
+		if trainerID == "female-trainer" {
+			t.Errorf("trainee %s (male) was assigned to the female trainer — constraint violated", id)
+		}
+	}
+}
+
+// Unused female-trainer capacity (she wanted 2, only 1 female trainee
+// existed) must be picked up by the male trainers rather than wasted:
+// this scenario is fully placeable, unlike the old fixed-quota design
+// which would have left one trainee stranded.
+func TestAssign_ReallocatesUnusedFemaleTrainerCapacity(t *testing.T) {
+	trainers := []Trainer{
+		{ID: "female-trainer", Gender: Female}, // aspirational quota 2
+		{ID: "male-trainer", Gender: Male},     // aspirational quota 1
 	}
 	trainees := []Trainee{
 		{ID: "f1", Gender: Female},
@@ -70,16 +105,38 @@ func TestAssign_ReportsUnassignedWhenInfeasible(t *testing.T) {
 	}
 	result := Assign(trainers, trainees)
 
-	if len(result.Unassigned) != 1 {
-		t.Fatalf("expected exactly 1 unassigned trainee, got %v", result.Unassigned)
+	if len(result.Unassigned) != 0 {
+		t.Fatalf("expected everyone placed via reallocation, got unassigned: %v", result.Unassigned)
 	}
 	if result.TraineeToTrainer["f1"] != "female-trainer" {
 		t.Errorf("expected f1 with female-trainer, got %s", result.TraineeToTrainer["f1"])
 	}
-	for _, id := range []string{"m1", "m2"} {
-		if trainerID, ok := result.TraineeToTrainer[id]; ok && trainerID != "male-trainer" {
-			t.Errorf("trainee %s assigned to %s, expected male-trainer or unassigned", id, trainerID)
-		}
+	if result.TraineeToTrainer["m1"] != "male-trainer" || result.TraineeToTrainer["m2"] != "male-trainer" {
+		t.Errorf("expected both male trainees with male-trainer, got m1=%s m2=%s",
+			result.TraineeToTrainer["m1"], result.TraineeToTrainer["m2"])
+	}
+}
+
+// The only way someone can genuinely be left unplaced is when there
+// are no male trainers at all to absorb male trainees (or leftover
+// female trainees) — female trainers simply cannot take them.
+func TestAssign_ReportsUnassignedWhenNoMaleTrainerExists(t *testing.T) {
+	trainers := []Trainer{
+		{ID: "female-trainer", Gender: Female},
+	}
+	trainees := []Trainee{
+		{ID: "f1", Gender: Female},
+		{ID: "f2", Gender: Female},
+		{ID: "m1", Gender: Male},
+	}
+	result := Assign(trainers, trainees)
+
+	if len(result.Unassigned) != 1 || result.Unassigned[0] != "m1" {
+		t.Fatalf("expected exactly m1 unassigned, got %v", result.Unassigned)
+	}
+	if result.TraineeToTrainer["f1"] != "female-trainer" || result.TraineeToTrainer["f2"] != "female-trainer" {
+		t.Errorf("expected both female trainees with the female trainer, got f1=%s f2=%s",
+			result.TraineeToTrainer["f1"], result.TraineeToTrainer["f2"])
 	}
 }
 
