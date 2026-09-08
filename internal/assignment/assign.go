@@ -2,71 +2,101 @@ package assignment
 
 import "sort"
 
-// Assign computes a trainer/trainee assignment that:
-//   - gives every trainer as close to an equal share of trainees as
-//     possible (quotas differ by at most one trainee), and
-//   - never assigns a male trainee to a female trainer (female
-//     trainers only take female trainees; male trainers can take
-//     trainees of either gender).
+// Assign computes a trainer/trainee assignment with a two-phase,
+// two-pointer approach — no flow network, just two linear passes over
+// gender-partitioned slices:
 //
-// It models the problem as a max-flow instance:
+//  1. Partition trainers and trainees by gender (female first). A
+//     stable partition on a two-valued key is exactly a stable sort by
+//     that key, done in O(N) instead of O(N log N).
+//  2. Phase 1: walk a trainer-pointer and a trainee-pointer together
+//     over the female trainers and female trainees only, filling each
+//     female trainer's fair-share quota from the female-trainee pool
+//     (female trainers can never take a male trainee).
+//  3. Phase 2: whatever's left over — any female trainees a female
+//     trainer's quota couldn't reach, plus every male trainee — is
+//     walked the same way against the male trainers. Male-trainer
+//     quotas are recomputed against exactly what's left in phase 2,
+//     so capacity a female trainer couldn't use (because there
+//     weren't enough female trainees) is picked up by the male
+//     trainers instead of sitting idle.
 //
-//	source -> trainee (cap 1) -> eligible trainer (cap 1) -> sink (cap = trainer's quota)
+// Because male trainers accept trainees of either gender, giving
+// female trainees to female trainers first never costs the male
+// trainers a placement they'd otherwise have made — it can only free
+// up room. That's what makes the two-phase split correct here without
+// needing a general matching/flow algorithm: the eligibility
+// structure is "one group takes anyone, the other only takes a
+// subset", not an arbitrary bipartite graph.
 //
-// and reads the assignment off the saturated trainee->trainer edges.
-// If the constraints make a full assignment impossible (e.g. more
-// male trainees than male-trainer capacity), the trainees that could
-// not be placed are returned in Assignment.Unassigned instead of
-// being silently dropped or force-matched incorrectly.
+// Anyone still unplaced after phase 2 (only possible when there are
+// no male trainers at all to absorb male trainees or leftover female
+// trainees) comes back in Assignment.Unassigned instead of being
+// silently dropped.
 func Assign(trainers []Trainer, trainees []Trainee) Assignment {
-	n := len(trainers)
-	m := len(trainees)
-
-	source := 0
-	traineeNode := func(i int) int { return 1 + i }
-	trainerNode := func(j int) int { return 1 + m + j }
-	sink := 1 + m + n
-
-	g := newFlowGraph(sink + 1)
-
-	for i := range trainees {
-		g.addEdge(source, traineeNode(i), 1)
-	}
-
-	quotas := fairQuotas(n, m)
-	for j := range trainers {
-		g.addEdge(trainerNode(j), sink, quotas[j])
-	}
-
-	for i, trainee := range trainees {
-		for j, trainer := range trainers {
-			if trainer.Gender == Female && trainee.Gender == Male {
-				continue // female trainers only take female trainees
-			}
-			g.addEdge(traineeNode(i), trainerNode(j), 1)
-		}
-	}
-
-	g.maxFlow(source, sink)
+	femaleTrainers, maleTrainers := splitTrainersByGender(trainers)
+	femaleTrainees, maleTrainees := splitTraineesByGender(trainees)
 
 	result := Assignment{TraineeToTrainer: make(map[string]string)}
-	for i, trainee := range trainees {
-		placed := false
-		for _, ei := range g.edges[traineeNode(i)] {
-			e := g.all[ei]
-			if e.flow > 0 && e.to >= trainerNode(0) && e.to < sink {
-				j := e.to - trainerNode(0)
-				result.TraineeToTrainer[trainee.ID] = trainers[j].ID
-				placed = true
-				break
-			}
+
+	// Phase 1: female trainers <- female trainees only.
+	aspirationalQuotas := fairQuotas(len(trainers), len(trainees))
+	femaleQuotas := aspirationalQuotas[:len(femaleTrainers)]
+
+	traineePtr := 0
+	for trainerIdx, quota := range femaleQuotas {
+		for taken := 0; taken < quota && traineePtr < len(femaleTrainees); taken++ {
+			result.TraineeToTrainer[femaleTrainees[traineePtr].ID] = femaleTrainers[trainerIdx].ID
+			traineePtr++
 		}
-		if !placed {
-			result.Unassigned = append(result.Unassigned, trainee.ID)
+	}
+	placedByFemaleTrainers := traineePtr
+
+	// Phase 2: leftover female trainees + all male trainees <- male trainers,
+	// with male-trainer quotas recomputed against what's actually left.
+	remaining := make([]Trainee, 0, len(femaleTrainees)-placedByFemaleTrainers+len(maleTrainees))
+	remaining = append(remaining, femaleTrainees[placedByFemaleTrainers:]...)
+	remaining = append(remaining, maleTrainees...)
+
+	maleQuotas := fairQuotas(len(maleTrainers), len(remaining))
+	remainingPtr := 0
+	for trainerIdx, quota := range maleQuotas {
+		for taken := 0; taken < quota && remainingPtr < len(remaining); taken++ {
+			result.TraineeToTrainer[remaining[remainingPtr].ID] = maleTrainers[trainerIdx].ID
+			remainingPtr++
 		}
+	}
+
+	for _, t := range remaining[remainingPtr:] {
+		result.Unassigned = append(result.Unassigned, t.ID)
 	}
 	sort.Strings(result.Unassigned)
 	return result
+}
+
+// splitTrainersByGender partitions trainers into (female, male),
+// preserving each group's relative order — a stable partition, i.e. a
+// stable sort by the two-valued "is female" key.
+func splitTrainersByGender(trainers []Trainer) (female, male []Trainer) {
+	for _, t := range trainers {
+		if t.Gender == Female {
+			female = append(female, t)
+		} else {
+			male = append(male, t)
+		}
+	}
+	return female, male
+}
+
+func splitTraineesByGender(trainees []Trainee) (female, male []Trainee) {
+	for _, t := range trainees {
+		if t.Gender == Female {
+			female = append(female, t)
+		} else {
+			male = append(male, t)
+		}
+	}
+	return female, male
 }
 
 // fairQuotas splits m items across n buckets as evenly as possible:
