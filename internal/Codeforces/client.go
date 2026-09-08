@@ -21,11 +21,11 @@ type Client struct {
 
 // Submission contains the fields needed by the activity tracker.
 type Submission struct {
-	ID                   int64 `json:"id"`
-	ContestID            int64 `json:"contestId"`
-	CreationTimeSeconds  int64 `json:"creationTimeSeconds"`
-	Problem              Problem `json:"problem"`
-	Verdict              string `json:"verdict"`
+	ID                  int64   `json:"id"`
+	ContestID           int64   `json:"contestId"`
+	CreationTimeSeconds int64   `json:"creationTimeSeconds"`
+	Problem             Problem `json:"problem"`
+	Verdict             string  `json:"verdict"`
 }
 
 // Problem identifies a Codeforces problem within a contest.
@@ -43,12 +43,12 @@ type apiResponse[T any] struct {
 
 // ActivitySummary is a compact, data-driven view of a user's recent work.
 type ActivitySummary struct {
-	Handle             string
-	TotalSubmissions   int
+	Handle              string
+	TotalSubmissions    int
 	AcceptedSubmissions int
-	UniqueSolved       int
-	SolvedInPeriod     int
-	LastSubmissionAt   time.Time
+	UniqueSolved        int
+	SolvedInPeriod      int
+	LastSubmissionAt    time.Time
 }
 
 // NewClient creates a Codeforces client using the default public API endpoint.
